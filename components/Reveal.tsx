@@ -16,8 +16,8 @@ export default function Reveal({
     <div className="animate-pop-in text-center flex flex-col items-center gap-4">
       <div className="text-sm uppercase tracking-[0.3em] text-white/40">It was…</div>
       <div
-        className={`font-display text-5xl md:text-7xl font-black uppercase ${
-          wasHuman ? "text-arena-human" : "text-arena-ai"
+        className={`font-display text-5xl md:text-7xl font-black uppercase px-4 py-2 rounded-lg ${
+          wasHuman ? "text-arena-human bg-arena-human/10" : "text-arena-ai bg-arena-ai/10"
         }`}
       >
         {wasHuman ? "Human" : "AI"}

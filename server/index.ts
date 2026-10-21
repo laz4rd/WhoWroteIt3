@@ -2,6 +2,7 @@ import { createServer } from "http";
 import next from "next";
 import { Server } from "socket.io";
 import { registerSocketHandlers } from "./game";
+import { warmUpOllama } from "../lib/anthropic";
 
 const dev = process.env.NODE_ENV !== "production";
 const hostname = "0.0.0.0"; // LAN-reachable, not just localhost
@@ -28,5 +29,6 @@ app.prepare().then(() => {
     console.log(`\n  Who Wrote It? — server ready`);
     console.log(`  Local:   http://localhost:${port}`);
     console.log(`  Network: http://<THIS_MACHINE_LAN_IP>:${port}\n`);
+    warmUpOllama();
   });
 });

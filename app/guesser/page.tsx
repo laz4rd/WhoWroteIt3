@@ -24,6 +24,7 @@ type ViewState =
   | "connecting"
   | "waiting"
   | "writing" // writer is composing, guesser waits
+  | "pending" // writer submitted, sentence being prepared
   | "guessing" // sentence is visible, guesser must choose
   | "reveal"
   | "finished";
@@ -69,6 +70,8 @@ export default function GuesserPage() {
       setView("writing");
     };
 
+    const onGuessPending = () => setView("pending");
+
     const onGuessReady = (payload: GuessReadyPayload) => {
       setTopic(payload.topic);
       setChallenge(payload.challenge);
@@ -91,6 +94,7 @@ export default function GuesserPage() {
 
     socket.on("duel:status", onStatus);
     socket.on("round:start", onRoundStart);
+    socket.on("guess:pending", onGuessPending);
     socket.on("guess:ready", onGuessReady);
     socket.on("round:reveal", onReveal);
     socket.on("duel:finished", onFinished);
@@ -101,6 +105,7 @@ export default function GuesserPage() {
     return () => {
       socket.off("duel:status", onStatus);
       socket.off("round:start", onRoundStart);
+      socket.off("guess:pending", onGuessPending);
       socket.off("guess:ready", onGuessReady);
       socket.off("round:reveal", onReveal);
       socket.off("duel:finished", onFinished);
@@ -140,6 +145,13 @@ export default function GuesserPage() {
           <>
             <TopicDisplay topic={topic} round={round} challenge={challenge} />
             <DuelStatus message="Opponent is writing…" />
+          </>
+        )}
+
+        {view === "pending" && (
+          <>
+            <TopicDisplay topic={topic} round={round} challenge={challenge} />
+            <DuelStatus message="Sentence incoming…" />
           </>
         )}
 

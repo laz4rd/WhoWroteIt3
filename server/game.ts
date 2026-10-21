@@ -98,6 +98,7 @@ function syncSocket(io: Server, socket: Socket) {
   }
   if (duel.state === "GUESSING") {
     if (role === "writer") socket.emit("writer:waiting");
+    if (role === "guesser" && !duel.displayedSentence) socket.emit("guess:pending");
     if (role === "guesser" && duel.displayedSentence) {
       socket.emit("guess:ready", { topic: duel.topic, sentence: duel.displayedSentence, round: duel.round, challenge: challengeForRound(duel.round) });
     }
@@ -147,18 +148,24 @@ async function handleWriterSubmit(io: Server, socket: Socket, sentence: string) 
   duel.state = "GUESSING";
 
   socket.emit("writer:waiting");
+  if (duel.guesserSocketId) io.to(duel.guesserSocketId).emit("guess:pending");
 
-  // Hidden, server-only coin flip. Never sent to the client before reveal.
-  const isHuman = Math.random() < 0.5;
+  // Hidden, server-only weighted flip.
+  // Adjust this value to change the AI frequency (e.g., 0.2 = 80% AI, 20% Human)
+  const humanProbability = 0.2;
+  const isHuman = Math.random() < humanProbability;
   duel.source = isHuman ? "human" : "ai";
 
   let sentenceToShow = trimmed;
 
   if (!isHuman) {
+    console.log(`[game] Attempting to generate AI sentence for topic: ${duel.topic}...`);
     const aiSentence = await generateAiSentenceWithRetry(duel.topic, trimmed, challengeForRound(duel.round));
     if (aiSentence) {
+      console.log(`[game] AI successfully generated: "${aiSentence}"`);
       sentenceToShow = aiSentence;
     } else {
+      console.warn(`[game] AI failed twice - falling back to HUMAN. Guesser will see the writer's original sentence.`);
       // Claude failed twice — fall back to HUMAN rather than crash or
       // expose an API error as the game result.
       duel.source = "human";

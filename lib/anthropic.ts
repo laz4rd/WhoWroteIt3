@@ -20,49 +20,73 @@
 // ──────────────────────────────────────────────────────────────────────
 // 1️⃣  Environment – read once at module load time
 // ──────────────────────────────────────────────────────────────────────
-const ollamaBaseUrl: string = (
-  // Allow an explicit override, otherwise fall back to the default local URL
-  process.env.OLLAMA_BASE_URL ?? "http://localhost:11434"
-);
-const ollamaModel: string = process.env.OLLAMA_MODEL ?? "gemma4:cloud";
+const ollamaBaseUrl: string = process.env.OLLAMA_BASE_URL ?? "http://127.0.0.1:11434";
+const ollamaModel: string = process.env.OLLAMA_MODEL ?? "qwen3:8b";
+const TIMEOUT_MS = Number(process.env.OLLAMA_TIMEOUT_MS) || 45000; // first call loads the model: be generous
+const MAX_TOKENS = Number(process.env.OLLAMA_MAX_TOKENS) || 80;
+
+function cleanOutput(raw: string): string {
+  let t = raw
+    .replace(/<think>[\s\S]*?<\/think>/gi, "") // strip reasoning blocks
+    .replace(/<think>[\s\S]*$/i, "") // unterminated think block
+    .trim();
+  t = t.split("\n").map((l) => l.trim()).filter(Boolean)[0] ?? ""; // first non-empty line only
+  return t.replace(/^["'“”‘’]+|["'“”‘’]+$/g, "").trim();
+}
+
+/** Call once at server start so the first real round isn't slow. */
+export async function warmUpOllama(): Promise<void> {
+  try {
+    await ollamaGenerate("Reply with the single word: ready");
+    console.log(`[ollama] warmed up model "${ollamaModel}" at ${ollamaBaseUrl}`);
+  } catch (err) {
+    console.error(`[ollama] warm-up failed — is "ollama serve" running and "${ollamaModel}" pulled?`, err);
+  }
+}
 
 // ──────────────────────────────────────────────────────────────────────
-// 2️⃣  Helper – send a prompt to Ollama’s /api/generate endpoint
+// 2️⃣  Helper – send a prompt to Ollama's /api/chat endpoint
 // ──────────────────────────────────────────────────────────────────────
 async function ollamaGenerate(prompt: string): Promise<string> {
   const payload = {
     model: ollamaModel,
-    prompt,
-    // Keep the generation deterministic for short sentences;
-    // you can tweak temperature / max_tokens via extra env vars if desired.
-    options: {
-      // temperature: Number(process.env.OLLAMA_TEMPERATURE) ?? 0.0,
-      max_tokens: Number(process.env.OLLAMA_MAX_TOKENS) ?? 60,
-    },
-    // non‑streaming – we want the whole answer in one response
+    messages: [{ role: "user", content: prompt }],
     stream: false,
+    think: false, // qwen3 etc: otherwise tokens get spent "thinking" and content comes back empty
+    keep_alive: "30m", // keep model loaded between rounds
+    options: {
+      num_predict: MAX_TOKENS, // Ollama's real option name (max_tokens is ignored)
+      temperature: 0.8,
+    },
   };
 
-  const response = await fetch(`${ollamaBaseUrl}/api/generate`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(payload),
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  try {
+    const response = await fetch(`${ollamaBaseUrl}/api/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
 
-  if (!response.ok) {
-    const txt = await response.text();
-    throw new Error(
-      `Ollama request failed (${response.status}): ${txt}`
-    );
+    if (!response.ok) {
+      const txt = await response.text();
+      throw new Error(`Ollama request failed (${response.status}): ${txt}`);
+    }
+
+    const json = (await response.json()) as { message?: { content?: string } };
+    return cleanOutput(json?.message?.content ?? "");
+  } catch (err: any) {
+    if (err?.name === "AbortError") {
+      console.error(`[Ollama Error]: Request timed out after ${TIMEOUT_MS}ms`);
+    } else {
+      console.error("[Ollama Fetch Error]:", err);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
   }
-
-  const json = (await response.json()) as { response: string };
-  // Ollama returns { response: "..." }
-  const raw = json?.response ?? "";
-  // Strip leading/trailing quotes some models add automatically
-  return raw.replace(/^["']|["']$/g, "").trim();
 }
 
 // ──────────────────────────────────────────────────────────────────────

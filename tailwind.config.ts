@@ -13,7 +13,7 @@ const config: Config = {
           panel: "#160527",
           border: "#5710a4",
           human: "#a000ff",
-          ai: "#cc64ff",
+          ai: "#00f2ff",
           gold: "#ffd000",
         },
         // New theme colors
